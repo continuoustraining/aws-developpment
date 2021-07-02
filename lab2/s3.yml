@@ -1,0 +1,14 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  PublicBucketName:
+    Type: String
+    Description: Public S3 Bucket Name
+  PrivateBucketName:
+    Type: String
+    Description: Private S3 Bucket Name
+
+Resources:
+
+Outputs:
+ 

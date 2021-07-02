@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  PublicBucketName:
+    Type: String
+    Description: Public S3 Bucket Name
+  PrivateBucketName:
+    Type: String
+    Description: Private S3 Bucket Name
+  HostedZone:
+    Type: String
+    Description: Hosted zon name
+  DomainName:
+    Type: String
+    Description: full public domain name
+  CertificateArn:
+    Type: String
+    Description: https certifcate for cloudfront
+    
+Resources:
+
+  S3PrivateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref PrivateBucketName
+
+  S3PublicBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref PublicBucketName
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+    DeletionPolicy: Retain
+    
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Id: MyPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3PublicBucket
+                - /*
+      Bucket: !Ref S3PublicBucket
+
+Outputs:
+
+  PrivateBucket:
+    Value: !Ref S3PrivateBucket
+    Description: "Private bucket name"
+
+  PublicBucket:
+    Value: !Ref S3PublicBucket
+    Description: "Public bucket name"
+
+  WebsiteURL:
+    Value: !GetAtt 
+      - S3PublicBucket
+      - WebsiteURL
+    Description: "URL for website hosted on S3"
+    
+  S3BucketSecureURL:
+    Value: !Join 
+      - ''
+      - - 'https://'
+        - !GetAtt 
+          - S3PublicBucket
+          - DomainName
+    Description: "Name of S3 bucket to hold website content"
