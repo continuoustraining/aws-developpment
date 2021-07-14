@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  QueueName:
+    Type: String
+    Description: "SQS Queue name"
+
+Resources:
+
+  TaskQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Ref QueueName
+      DelaySeconds: 0
+      VisibilityTimeout: 120
+      
+  LambdaFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt TaskQueue.Arn
+      FunctionName: !GetAtt MailLambdaFunction.Arn
+
+  MailLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: !Sub "lambda-policy-${AWS::StackName}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendTemplatedEmail
+                  - ses:SendRawEmail
+                  - ses:SendBulkTemplatedEmail
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'sqs:*'
+                Resource: !GetAtt TaskQueue.Arn
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:*'
+                Resource: !GetAtt DynamoDBTable.Arn
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            
+
+  MailLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub "MailLambdaFunction${AWS::StackName}"
+      Role: !GetAtt MailLambdaRole.Arn
+      Runtime: python3.7
+      Handler: index.my_handler
+      Environment:
+        Variables:
+          queuUrl: !Ref TaskQueue
+          dynamoTable: !Ref DynamoDBTable
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          import uuid
+          
+          def my_handler(event, context):
+            
+            AWS_REGION='us-east-1'
+            
+            print(event['Records'][0])
+            
+            message = json.loads(event['Records'][0]['body'])
+            messageId = event['Records'][0]['messageId']
+            ReceiptHandle= event['Records'][0]['receiptHandle']
+            
+            client = boto3.client('ses',region_name=AWS_REGION)
+            
+            clientSQS = boto3.client('sqs')
+            
+            dynamoTable = boto3.resource('dynamodb').Table(os.environ['dynamoTable'])
+            
+            print(message)
+            
+            CHARSET='UTF-8'
+            
+            BODY_HTML="<b>hello" + message["userName"] + "</b>"
+            BODY_TEXT="hello" + message["userName"]
+            
+            response = client.send_email(
+                        Destination={
+                            'ToAddresses': [
+                                message["userEmail"],
+                            ],
+                        },
+                        Message={
+                            'Body': {
+                                'Html': {
+                                    'Charset': CHARSET,
+                                    'Data': BODY_HTML,
+                                },
+                                'Text': {
+                                    'Charset': CHARSET,
+                                    'Data': BODY_TEXT,
+                                },
+                            },
+                            'Subject': {
+                                'Charset': CHARSET,
+                                'Data': message["subject"],
+                            },
+                        },
+                        Source=message["sender"],
+              )
+            clientSQS.delete_message(
+                QueueUrl=os.environ['queuUrl'],
+                ReceiptHandle=ReceiptHandle
+            )
+            
+            dynamoTable.put_item(Item= {
+                                'Id': str(uuid.uuid4()),
+                                'email': message["userEmail"] ,
+                                'subject': message["subject"], 
+                                'message': event['Records'][0]['body'] , 
+                                'content': BODY_HTML });
+            
+            return message
+            
+          
+  LambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt MailLambdaFunction.Arn
+      Principal: 'sqs.amazonaws.com'
+      SourceArn: !GetAtt TaskQueue.Arn
+      
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "Id"
+          AttributeType: "S"
+        - AttributeName: "email"
+          AttributeType: "S"
+      KeySchema: 
+        - AttributeName: "Id"
+          KeyType: "HASH"
+        - AttributeName: "email"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+      
+Outputs:
+  TaskQueueArn:
+    Value: !GetAtt TaskQueue.Arn
+    Description: SQS Queue ARN
+    
+  TaskQueueURL:
+    Value: !Ref TaskQueue
+    Description: SQS Queue URL

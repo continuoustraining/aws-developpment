@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Container Registry
+
+Parameters:
+  RepositoryName:
+    Description: Repository to create
+    Type: String
+
+Resources:
+
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      RepositoryPolicyText:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Sid: AllowPull
+            Effect: Allow
+            Principal:
+              AWS: 
+              - !GetAtt PullerRole.Arn
+            Action:
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+          -
+            Sid: AllowPush
+            Effect: Allow
+            Principal:
+              AWS: 
+              - !GetAtt PusherUser.Arn
+            Action:
+              - "ecr:PutImage"
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
+              - "ecr:DescribeRepositories"
+              - "ecr:GetRepositoryPolicy"
+              - "ecr:ListImages"
+              - "ecr:DescribeImages"
+              - "ecr:BatchDeleteImage"
+              
+  PusherUser:
+    Type: AWS::IAM::User
+
+  PusherUserAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      Status: Active
+      UserName: !Ref PusherUser
+
+  PusherEcrPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: PusherEcrPolicy
+      Users:
+        - !Ref PusherUser
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:CompleteLayerUpload
+              - ecr:DescribeImages
+              - ecr:GetAuthorizationToken
+              - ecr:DescribeRepositories
+              - ecr:UploadLayerPart
+              - ecr:ListImages
+              - ecr:InitiateLayerUpload
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetRepositoryPolicy
+              - ecr:PutImage
+            Effect: Allow
+            Resource: '*'
+            
+  PullerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/application/"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+            
+
+Outputs:
+
+  RepositoryUri:
+    Description: "repository URI to pull and push"
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RepositoryName}"
+
+  ReaderArn:
+    Description: "Role to use for pullers service"
+    Value: !GetAtt PullerRole.Arn
+
+  WriterArns:
+    Description: "Writers ARNs"
+    Value: !GetAtt PusherUser.Arn
+
+  PusherUserAccessKey:
+    Description: "Pusher user Access Key"
+    Value: !Ref PusherUserAccessKey
+
+  PusherUserSecretKey:
+    Description: "Pusher user Secret Key"
+    Value: !GetAtt PusherUserAccessKey.SecretAccessKey
