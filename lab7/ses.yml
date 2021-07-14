@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  TopicName:
+    Type: String
+    Description: "SNS Topic name"
+
+Resources:
+
+  Topic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Ref TopicName
+      TopicName: !Ref TopicName
+      Subscription:
+        - Protocol: lambda
+          Endpoint: !GetAtt HelloLambdaFunction.Arn
+  
+  TopicPolicy: 
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      Topics:
+        - !Ref Topic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'sns:Publish'
+            Resource: !Ref Topic
+            Principal:
+              AWS: '*'
+            Condition:
+              ArnLike:
+                AWS:SourceArn: !Sub 'arn:aws:*:*:${AWS::AccountId}:*'
+
+  HelloLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            
+
+  HelloLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "HelloLambdaFunction${AWS::StackName}"
+      Role: !GetAtt HelloLambdaRole.Arn
+      Runtime: python3.7
+      Handler: index.my_handler
+      Code:
+        ZipFile: |
+          def my_handler(event, context):
+            message = event['Records'][0]['Sns']['Message']
+            print("Hello World: " + message)
+            return message
+            
+          
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt HelloLambdaFunction.Arn
+      Principal: 'sns.amazonaws.com'
+      SourceArn: !Ref Topic
+      
+Outputs:
+  TopicArn:
+    Value: !Ref Topic
+    Description: SNS topic ARN

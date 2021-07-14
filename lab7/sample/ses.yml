@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  TopicName:
+    Type: String
+    Description: "SNS Topic name"
+
+Resources:
+
+  Topic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: !Ref TopicName
+      TopicName: !Ref TopicName
+      Subscription:
+        - Protocol: lambda
+          Endpoint: !GetAtt MailLambdaFunction.Arn
+  
+  TopicPolicy: 
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      Topics:
+        - !Ref Topic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: 'sns:Publish'
+            Resource: !Ref Topic
+            Principal:
+              AWS: '*'
+            Condition:
+              ArnLike:
+                AWS:SourceArn: !Sub 'arn:aws:*:*:${AWS::AccountId}:*'
+
+  MailLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: !Sub "lambda-policy-${AWS::StackName}"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendTemplatedEmail
+                  - ses:SendRawEmail
+                  - ses:SendBulkTemplatedEmail
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'sns:*'
+                Resource: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${TopicName}"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+            
+
+  MailLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub "MailLambdaFunction${AWS::StackName}"
+      Role: !GetAtt MailLambdaRole.Arn
+      Runtime: python3.7
+      Handler: index.my_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          
+          def my_handler(event, context):
+            
+            AWS_REGION='us-east-1'
+          
+            message = json.loads(event['Records'][0]['Sns']['Message'])
+            client = boto3.client('ses',region_name=AWS_REGION)
+            
+            print(message)
+            
+            CHARSET='UTF-8'
+            
+            BODY_HTML="<b>hello" + message["userName"] + "</b>"
+            BODY_TEXT="hello" + message["userName"]
+            
+            response = client.send_email(
+                        Destination={
+                            'ToAddresses': [
+                                message["userEmail"],
+                            ],
+                        },
+                        Message={
+                            'Body': {
+                                'Html': {
+                                    'Charset': CHARSET,
+                                    'Data': BODY_HTML,
+                                },
+                                'Text': {
+                                    'Charset': CHARSET,
+                                    'Data': BODY_TEXT,
+                                },
+                            },
+                            'Subject': {
+                                'Charset': CHARSET,
+                                'Data': message["subject"],
+                            },
+                        },
+                        Source=message["sender"],
+              )
+
+            return message
+            
+          
+  LambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt MailLambdaFunction.Arn
+      Principal: 'sns.amazonaws.com'
+      SourceArn: !Ref Topic
+      
+Outputs:
+  TopicArn:
+    Value: !Ref Topic
+    Description: SNS topic ARN
