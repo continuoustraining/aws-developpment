@@ -51,7 +51,8 @@ aws --profile <my profile> \
     --region us-east-1 cloudformation deploy \          
     --template-file ./lambda.yml \        
     --stack-name <TO REPLACE> \          
-    --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+    --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
+    --role-arn <to replace>
 
 ```
   
