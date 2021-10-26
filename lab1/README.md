@@ -14,7 +14,7 @@ Dans la policy de l'utilisateur:
 
 ajoutez les droits suivants :
 ```
-- lamdba:*
+- lambda:*
 - ec2:*
 - route53:*
 - ecr:*
