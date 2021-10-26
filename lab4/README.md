@@ -60,7 +60,8 @@ Nous allons exécuter notre lambda:
   
 ```bash
 
-aws lambda invoke \
+aws --profile <to replace> \
+--region us-east-1 lambda invoke \
 --invocation-type RequestResponse \
 --function-name <to replace> \
 --log-type Tail outputfile.txt
